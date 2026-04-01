@@ -1,3 +1,4 @@
+/* eslint-env node */
 import express from "express";
 import cors from "cors";
 import bcrypt from "bcryptjs";
@@ -5,7 +6,18 @@ import { randomUUID } from "crypto";
 import { existsSync } from "fs";
 import { dirname, join } from "path";
 import { fileURLToPath } from "url";
-import { all, get, initDatabase, run } from "./db.js";
+import {
+  createTransaction,
+  createUser,
+  deleteTransactionById,
+  findTransactionById,
+  findTransactionsByUserId,
+  findUserByEmail,
+  findUserById,
+  initDatabase,
+  updateTransactionById,
+  updateUserById,
+} from "./db.js";
 import { authMiddleware, signToken } from "./auth.js";
 import { transactions as seedTransactions } from "../src/data/transactions.js";
 
@@ -23,17 +35,17 @@ app.use(cors());
 app.use(express.json());
 
 const serializeUser = (row) => ({
-  id: row.id,
+  id: row._id.toHexString(),
   email: row.email,
   profile: {
-    fullName: row.full_name,
-    displayName: row.display_name,
+    fullName: row.fullName,
+    displayName: row.displayName,
     occupation: row.occupation,
-    monthlyGoal: Number(row.monthly_goal),
+    monthlyGoal: Number(row.monthlyGoal),
     currency: row.currency,
     bio: row.bio,
   },
-  createdAt: row.created_at,
+  createdAt: row.createdAt,
 });
 
 const serializeTransaction = (row) => ({
@@ -45,99 +57,58 @@ const serializeTransaction = (row) => ({
   note: row.note,
 });
 
-const getUserByEmail = async (email) =>
-  get("SELECT * FROM users WHERE email = ?", [email]);
-
-const getUserById = async (userId) =>
-  get("SELECT * FROM users WHERE id = ?", [userId]);
-
-const getTransactionsByUserId = async (userId) =>
-  all(
-    `SELECT id, date, amount, category, type, note
-     FROM transactions
-     WHERE user_id = ?
-     ORDER BY date DESC, created_at DESC`,
-    [userId]
-  );
-
 const respondWithSession = async (userRow) => {
-  const transactions = await getTransactionsByUserId(userRow.id);
+  const userId = userRow._id.toHexString();
+  const transactions = await findTransactionsByUserId(userId);
   return {
-    token: signToken(userRow.id),
+    token: signToken(userId),
     user: serializeUser(userRow),
     transactions: transactions.map(serializeTransaction),
   };
 };
 
 const seedDemoAccount = async () => {
-  const existingDemo = await getUserByEmail(DEMO_EMAIL);
+  const existingDemo = await findUserByEmail(DEMO_EMAIL);
 
-  let demoUserId = existingDemo?.id;
+  let demoUserId = existingDemo?._id?.toHexString();
 
   if (!existingDemo) {
     const passwordHash = await bcrypt.hash(DEMO_PASSWORD, 10);
     const now = new Date().toISOString();
 
-    const insertResult = await run(
-      `INSERT INTO users (
-        full_name,
-        email,
-        password_hash,
-        display_name,
-        occupation,
-        monthly_goal,
-        currency,
-        bio,
-        created_at,
-        updated_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      [
-        "Demo User",
-        DEMO_EMAIL,
-        passwordHash,
-        "Demo User",
-        "Independent professional",
-        50000,
-        "INR",
-        "Track income, expenses, and the habits that shape your finances.",
-        now,
-        now,
-      ]
-    );
+    const insertedUser = await createUser({
+      fullName: "Demo User",
+      email: DEMO_EMAIL,
+      passwordHash,
+      displayName: "Demo User",
+      occupation: "Independent professional",
+      monthlyGoal: 50000,
+      currency: "INR",
+      bio: "Track income, expenses, and the habits that shape your finances.",
+      createdAt: now,
+      updatedAt: now,
+    });
 
-    demoUserId = insertResult.lastID;
+    demoUserId = insertedUser._id.toHexString();
   }
 
-  const demoTransactions = await getTransactionsByUserId(demoUserId);
+  const demoTransactions = await findTransactionsByUserId(demoUserId);
 
   if (demoTransactions.length === 0) {
     const now = new Date().toISOString();
 
     for (const transaction of seedTransactions) {
-      await run(
-        `INSERT INTO transactions (
-          id,
-          user_id,
-          date,
-          amount,
-          category,
-          type,
-          note,
-          created_at,
-          updated_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-        [
-          `demo-${transaction.id}`,
-          demoUserId,
-          transaction.date,
-          transaction.amount,
-          transaction.category,
-          transaction.type,
-          "",
-          now,
-          now,
-        ]
-      );
+      await createTransaction({
+        id: `demo-${transaction.id}`,
+        userId: demoUserId,
+        date: transaction.date,
+        amount: transaction.amount,
+        category: transaction.category,
+        type: transaction.type,
+        note: "",
+        createdAt: now,
+        updatedAt: now,
+      });
     }
   }
 };
@@ -155,7 +126,7 @@ app.post("/api/auth/register", async (req, res, next) => {
     }
 
     const normalizedEmail = email.trim().toLowerCase();
-    const existingUser = await getUserByEmail(normalizedEmail);
+    const existingUser = await findUserByEmail(normalizedEmail);
 
     if (existingUser) {
       return res.status(409).json({ message: "An account with this email already exists" });
@@ -164,34 +135,18 @@ app.post("/api/auth/register", async (req, res, next) => {
     const passwordHash = await bcrypt.hash(password, 10);
     const now = new Date().toISOString();
 
-    const insertResult = await run(
-      `INSERT INTO users (
-        full_name,
-        email,
-        password_hash,
-        display_name,
-        occupation,
-        monthly_goal,
-        currency,
-        bio,
-        created_at,
-        updated_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      [
-        fullName.trim(),
-        normalizedEmail,
-        passwordHash,
-        fullName.trim(),
-        "Independent professional",
-        50000,
-        "INR",
-        "Track income, expenses, and the habits that shape your finances.",
-        now,
-        now,
-      ]
-    );
-
-    const user = await getUserById(insertResult.lastID);
+    const user = await createUser({
+      fullName: fullName.trim(),
+      email: normalizedEmail,
+      passwordHash,
+      displayName: fullName.trim(),
+      occupation: "Independent professional",
+      monthlyGoal: 50000,
+      currency: "INR",
+      bio: "Track income, expenses, and the habits that shape your finances.",
+      createdAt: now,
+      updatedAt: now,
+    });
     const session = await respondWithSession(user);
 
     res.status(201).json(session);
@@ -209,13 +164,13 @@ app.post("/api/auth/login", async (req, res, next) => {
     }
 
     const normalizedEmail = email.trim().toLowerCase();
-    const user = await getUserByEmail(normalizedEmail);
+    const user = await findUserByEmail(normalizedEmail);
 
     if (!user) {
       return res.status(401).json({ message: "Invalid email or password" });
     }
 
-    const passwordMatches = await bcrypt.compare(password, user.password_hash);
+    const passwordMatches = await bcrypt.compare(password, user.passwordHash);
 
     if (!passwordMatches) {
       return res.status(401).json({ message: "Invalid email or password" });
@@ -231,7 +186,7 @@ app.post("/api/auth/login", async (req, res, next) => {
 
 app.get("/api/me", authMiddleware, async (req, res, next) => {
   try {
-    const user = await getUserById(req.userId);
+    const user = await findUserById(req.userId);
 
     if (!user) {
       return res.status(404).json({ message: "User not found" });
@@ -247,7 +202,7 @@ app.get("/api/me", authMiddleware, async (req, res, next) => {
 app.put("/api/me/profile", authMiddleware, async (req, res, next) => {
   try {
     const { fullName, displayName, occupation, monthlyGoal, currency, bio } = req.body;
-    const user = await getUserById(req.userId);
+    const user = await findUserById(req.userId);
 
     if (!user) {
       return res.status(404).json({ message: "User not found" });
@@ -255,23 +210,15 @@ app.put("/api/me/profile", authMiddleware, async (req, res, next) => {
 
     const now = new Date().toISOString();
 
-    await run(
-      `UPDATE users
-       SET full_name = ?, display_name = ?, occupation = ?, monthly_goal = ?, currency = ?, bio = ?, updated_at = ?
-       WHERE id = ?`,
-      [
-        fullName?.trim() || user.full_name,
-        displayName?.trim() || user.display_name,
-        occupation?.trim() || user.occupation,
-        Number.isFinite(Number(monthlyGoal)) ? Number(monthlyGoal) : user.monthly_goal,
-        currency || user.currency,
-        bio?.trim() || user.bio,
-        now,
-        req.userId,
-      ]
-    );
-
-    const updatedUser = await getUserById(req.userId);
+    const updatedUser = await updateUserById(req.userId, {
+      fullName: fullName?.trim() || user.fullName,
+      displayName: displayName?.trim() || user.displayName,
+      occupation: occupation?.trim() || user.occupation,
+      monthlyGoal: Number.isFinite(Number(monthlyGoal)) ? Number(monthlyGoal) : user.monthlyGoal,
+      currency: currency || user.currency,
+      bio: bio?.trim() || user.bio,
+      updatedAt: now,
+    });
     res.json({ user: serializeUser(updatedUser) });
   } catch (error) {
     next(error);
@@ -280,7 +227,7 @@ app.put("/api/me/profile", authMiddleware, async (req, res, next) => {
 
 app.get("/api/transactions", authMiddleware, async (req, res, next) => {
   try {
-    const transactions = await getTransactionsByUserId(req.userId);
+    const transactions = await findTransactionsByUserId(req.userId);
     res.json({ transactions: transactions.map(serializeTransaction) });
   } catch (error) {
     next(error);
@@ -298,30 +245,17 @@ app.post("/api/transactions", authMiddleware, async (req, res, next) => {
     const transactionId = id || randomUUID();
     const now = new Date().toISOString();
 
-    await run(
-      `INSERT INTO transactions (
-        id,
-        user_id,
-        date,
-        amount,
-        category,
-        type,
-        note,
-        created_at,
-        updated_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      [
-        transactionId,
-        req.userId,
-        date,
-        Number(amount),
-        category.trim(),
-        type,
-        note?.trim() || "",
-        now,
-        now,
-      ]
-    );
+    await createTransaction({
+      id: transactionId,
+      userId: req.userId,
+      date,
+      amount: Number(amount),
+      category: category.trim(),
+      type,
+      note: note?.trim() || "",
+      createdAt: now,
+      updatedAt: now,
+    });
 
     res.status(201).json({
       transaction: {
@@ -347,10 +281,7 @@ app.put("/api/transactions/:transactionId", authMiddleware, async (req, res, nex
       return res.status(400).json({ message: "Date, category, type, and amount are required" });
     }
 
-    const existingTransaction = await get(
-      "SELECT * FROM transactions WHERE id = ? AND user_id = ?",
-      [transactionId, req.userId]
-    );
+    const existingTransaction = await findTransactionById(req.userId, transactionId);
 
     if (!existingTransaction) {
       return res.status(404).json({ message: "Transaction not found" });
@@ -358,21 +289,14 @@ app.put("/api/transactions/:transactionId", authMiddleware, async (req, res, nex
 
     const now = new Date().toISOString();
 
-    await run(
-      `UPDATE transactions
-       SET date = ?, amount = ?, category = ?, type = ?, note = ?, updated_at = ?
-       WHERE id = ? AND user_id = ?`,
-      [
-        date,
-        Number(amount),
-        category.trim(),
-        type,
-        note?.trim() || "",
-        now,
-        transactionId,
-        req.userId,
-      ]
-    );
+    await updateTransactionById(req.userId, transactionId, {
+      date,
+      amount: Number(amount),
+      category: category.trim(),
+      type,
+      note: note?.trim() || "",
+      updatedAt: now,
+    });
 
     res.json({
       transaction: {
@@ -392,12 +316,9 @@ app.put("/api/transactions/:transactionId", authMiddleware, async (req, res, nex
 app.delete("/api/transactions/:transactionId", authMiddleware, async (req, res, next) => {
   try {
     const { transactionId } = req.params;
-    const deletionResult = await run(
-      "DELETE FROM transactions WHERE id = ? AND user_id = ?",
-      [transactionId, req.userId]
-    );
+    const isDeleted = await deleteTransactionById(req.userId, transactionId);
 
-    if (deletionResult.changes === 0) {
+    if (!isDeleted) {
       return res.status(404).json({ message: "Transaction not found" });
     }
 
@@ -407,8 +328,14 @@ app.delete("/api/transactions/:transactionId", authMiddleware, async (req, res, 
   }
 });
 
-app.use((error, _req, res, _next) => {
+app.use((error, _req, res, next) => {
+  void next;
   console.error(error);
+
+  if (error?.code === 11000) {
+    return res.status(409).json({ message: "A record with this value already exists" });
+  }
+
   res.status(500).json({ message: "Internal server error" });
 });
 

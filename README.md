@@ -1,6 +1,6 @@
 # Flow Finance
 
-Flow Finance is a full-stack finance portal built with React, Vite, Tailwind CSS, Express, and SQLite. Users can register with email, sign in again later, edit their profile, and manage personal financial records that are stored in the backend.
+Flow Finance is a full-stack finance portal built with React, Vite, Tailwind CSS, Express, and MongoDB. Users can register with email, sign in again later, edit their profile, and manage personal financial records that are stored in the backend.
 
 ## Features
 
@@ -9,7 +9,7 @@ Flow Finance is a full-stack finance portal built with React, Vite, Tailwind CSS
 - Editable personal profile for each user.
 - Dashboard summary cards, monthly trend, and category breakdown.
 - Personal transaction CRUD with search, filtering, and sorting.
-- SQLite-backed persistence for users and transactions.
+- MongoDB-backed persistence for users and transactions.
 - Modern responsive UI with polished cards, charts, and account shell.
 
 ## Setup
@@ -22,6 +22,12 @@ npm run dev
 This starts the Express API on port `3001` and the Vite frontend on port `5173`.
 
 Create a `.env` file based on `.env.example` before running in production.
+
+Required environment variables:
+
+- `JWT_SECRET`
+- `MONGODB_URI`
+- `MONGODB_DB_NAME` (optional, defaults to `flow-finance`)
 
 ## Production Build
 
@@ -44,14 +50,13 @@ The backend serves the built frontend from `dist/` when that folder exists.
 - Profile editor: [src/pages/Profile.jsx](src/pages/Profile.jsx)
 - Transactions workspace: [src/pages/Transactions.jsx](src/pages/Transactions.jsx)
 - Backend server: [server/index.js](server/index.js)
-- SQLite setup: [server/db.js](server/db.js)
+- MongoDB setup: [server/db.js](server/db.js)
 
 ## Notes
 
-- The database file is created locally under `server/data/flow-finance.db`.
 - The frontend talks to the API through a Vite proxy at `/api`.
 - All user data is scoped to the authenticated account.
-- SQLite storage is file-based.
+- MongoDB data is persisted outside the app runtime.
 
 ## Vercel Deploy
 
@@ -59,11 +64,12 @@ This repository now deploys with Vercel using `vercel.json`.
 
 1. Import the GitHub repository in Vercel.
 2. Framework preset can remain `Other` (config is driven by `vercel.json`).
-3. Add environment variable `JWT_SECRET` in Vercel project settings.
-4. Deploy.
+3. Create a MongoDB Atlas cluster and copy your connection string.
+4. Add these environment variables in Vercel project settings:
+	- `JWT_SECRET`
+	- `MONGODB_URI` (Atlas connection string)
+	- `MONGODB_DB_NAME` (for example `flow-finance`)
+5. Deploy.
 
-Important runtime note:
-
-- On Vercel, SQLite runs in ephemeral serverless storage (`/tmp`), so data can reset across cold starts/redeploys.
-- For persistent production data, migrate to a managed database (for example Neon/Supabase Postgres or Turso).
+The Vercel API route (`api/index.js`) initializes the database connection once per runtime instance and reuses it for subsequent invocations.
 

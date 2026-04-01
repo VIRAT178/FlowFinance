@@ -1,3 +1,4 @@
+/* eslint-env node */
 import jwt from "jsonwebtoken";
 
 export const JWT_SECRET = process.env.JWT_SECRET || "flow-finance-dev-secret";
