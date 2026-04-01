@@ -17,6 +17,7 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 const distDirectory = join(__dirname, "..", "dist");
 const distIndexFile = join(distDirectory, "index.html");
+const isDirectRun = process.argv[1] === __filename;
 
 app.use(cors());
 app.use(express.json());
@@ -419,6 +420,21 @@ if (existsSync(distIndexFile)) {
   });
 }
 
+let initializationPromise;
+
+export const initializeApp = async () => {
+  if (!initializationPromise) {
+    initializationPromise = (async () => {
+      await initDatabase();
+      await seedDemoAccount();
+    })();
+  }
+
+  await initializationPromise;
+};
+
+export { app };
+
 const startServer = async () => {
   await initDatabase();
   await seedDemoAccount();
@@ -428,7 +444,9 @@ const startServer = async () => {
   });
 };
 
-startServer().catch((error) => {
-  console.error("Failed to start server", error);
-  process.exit(1);
-});
+if (isDirectRun) {
+  startServer().catch((error) => {
+    console.error("Failed to start server", error);
+    process.exit(1);
+  });
+}

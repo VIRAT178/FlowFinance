@@ -51,5 +51,19 @@ The backend serves the built frontend from `dist/` when that folder exists.
 - The database file is created locally under `server/data/flow-finance.db`.
 - The frontend talks to the API through a Vite proxy at `/api`.
 - All user data is scoped to the authenticated account.
-- SQLite storage is file-based. On hosts with ephemeral disks, data can reset on redeploy unless you mount persistent storage.
+- SQLite storage is file-based.
+
+## Vercel Deploy
+
+This repository now deploys with Vercel using `vercel.json`.
+
+1. Import the GitHub repository in Vercel.
+2. Framework preset can remain `Other` (config is driven by `vercel.json`).
+3. Add environment variable `JWT_SECRET` in Vercel project settings.
+4. Deploy.
+
+Important runtime note:
+
+- On Vercel, SQLite runs in ephemeral serverless storage (`/tmp`), so data can reset across cold starts/redeploys.
+- For persistent production data, migrate to a managed database (for example Neon/Supabase Postgres or Turso).
 

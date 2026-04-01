@@ -9,7 +9,12 @@ const sqlite3 = require("sqlite3");
 const Database = sqlite3.verbose().Database;
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
-const dataDirectory = join(__dirname, "data");
+const isVercelRuntime = process.env.VERCEL === "1";
+const dataDirectory = process.env.DB_DIRECTORY
+  ? process.env.DB_DIRECTORY
+  : isVercelRuntime
+    ? "/tmp"
+    : join(__dirname, "data");
 const databasePath = join(dataDirectory, "flow-finance.db");
 
 mkdirSync(dataDirectory, { recursive: true });
