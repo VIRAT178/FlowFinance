@@ -58,7 +58,6 @@ The backend serves the built frontend from `dist/` when that folder exists.
 - All user data is scoped to the authenticated account.
 - MongoDB data is persisted outside the app runtime.
 
-<<<<<<< HEAD
 ## Vercel Deploy
 
 This repository now deploys with Vercel using `vercel.json`.
@@ -73,6 +72,3 @@ This repository now deploys with Vercel using `vercel.json`.
 5. Deploy.
 
 The Vercel API route (`api/index.js`) initializes the database connection once per runtime instance and reuses it for subsequent invocations.
-
-=======
->>>>>>> 5640bf1ac292e46ebb3b3462048fab0e4279a6c1
