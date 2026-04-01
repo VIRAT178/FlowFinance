@@ -21,6 +21,8 @@ npm run dev
 
 This starts the Express API on port `3001` and the Vite frontend on port `5173`.
 
+Create a `.env` file based on `.env.example` before running in production.
+
 ## Production Build
 
 ```bash
